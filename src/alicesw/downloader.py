@@ -1,6 +1,9 @@
+import logging
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+logger = logging.getLogger(__name__)
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 
@@ -18,8 +21,13 @@ class Downloader:
         self.session.headers["User-Agent"] = USER_AGENT
         self.session.mount("http://", ADAPTER)
         self.session.mount("https://", ADAPTER)
+        logger.info("Downloader 初始化完成，timeout=%d, User-Agent=%s", timeout, USER_AGENT)
 
     def download(self, url: str) -> str:
+        logger.info("开始下载: %s", url)
         response = self.session.get(url, timeout=self.timeout)
+        logger.debug("收到响应: status_code=%d, content_length=%s", response.status_code, response.headers.get('Content-Length', 'unknown'))
         response.raise_for_status()
-        return response.content.decode(response.apparent_encoding, errors="replace")
+        content = response.content.decode(response.apparent_encoding, errors="replace")
+        logger.info("下载完成: %s, 编码=%s, 内容长度=%d 字符", url, response.apparent_encoding, len(content))
+        return content
