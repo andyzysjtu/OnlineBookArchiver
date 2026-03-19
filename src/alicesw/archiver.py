@@ -34,11 +34,29 @@ class Archiver:
         meta_path.write_text(tomlkit.dumps(meta), encoding="utf-8")
         logger.info("保存元数据到: %s", meta_path)
 
+        meta_extend_path = dir / "meta_extend.toml"
+        completed_chapters = {}
+        if meta_extend_path.exists():
+            meta_extend = tomlkit.parse(meta_extend_path.read_text(encoding="utf-8"))
+            for completed_chapter in [chapter for chapter in meta_extend["chapters"] if "name" in chapter and "word_count" in chapter and "update_time" in chapter and "id" in chapter and "txt" in chapter]:
+                completed_chapters[completed_chapter["url"]] = completed_chapter
+            logger.info("已加载 meta_extend.toml，已完成 %d 个章节", len(completed_chapters))
+        else:
+            logger.info("未找到已有的 meta_extend.toml，将从头开始下载")
+
         total_chapters = len(meta["chapters"])
         logger.info("共 %d 个章节待下载", total_chapters)
 
         downloaded_count = 0
+        skipped_count = 0
         for i, chapter_meta in enumerate(meta["chapters"]):
+            if chapter_meta["url"] in completed_chapters:
+                completed_chapter = completed_chapters[chapter_meta["url"]]
+                chapter_meta.update(completed_chapter)
+
+                skipped_count += 1
+                logger.info("跳过已下载章节 [%d/%d]: %s", i + 1, total_chapters, chapter_meta.get("index", ""))
+                continue
             try:
                 chapter_url = URL_PREFIX + chapter_meta['url']
                 chapter_id = urlparse(chapter_url).path.split('/')[-1].replace('.html', '')
@@ -63,10 +81,9 @@ class Archiver:
                 logger.error("下载章节 [%d/%d] 时发生异常: %s，终止下载循环", i + 1, total_chapters, e)
                 break
         
-        meta_extend_path = dir / "meta_extend.toml"
         meta_extend_path.write_text(tomlkit.dumps(meta), encoding="utf-8")
         logger.info("保存扩展元数据到: %s", meta_extend_path)
-        logger.info("归档任务完成，已成功下载 %d/%d 个章节", downloaded_count, total_chapters)
+        logger.info("归档任务完成，已成功下载 %d/%d 个章节，跳过 %d 个已下载章节", downloaded_count, total_chapters, skipped_count)
 
 def main():
     parser = argparse.ArgumentParser(description='www.alicesw.com 电子书归档工具')
