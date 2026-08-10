@@ -2,6 +2,7 @@ import tomlkit
 
 from test_alicesw import RESOURCES
 
+
 def test_meta_uncompleted():
     meta = tomlkit.parse((RESOURCES / "meta.toml").read_text(encoding="utf-8"))
     meta_extend = tomlkit.parse((RESOURCES / "meta_extend.toml").read_text(encoding="utf-8"))
