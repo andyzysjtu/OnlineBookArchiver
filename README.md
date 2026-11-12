@@ -48,6 +48,23 @@ powershell -ExecutionPolicy Bypass -File ".\scripts\Start-BrowserCdp.ps1" -Brows
 powershell -ExecutionPolicy Bypass -File ".\scripts\Start-BrowserCdp.ps1" -Browser chrome -Port 9224 -WslHostAddress 172.16.103.78
 ```
 
+### 检查 Edge CDP 端口转发
+
+启动 Edge CDP 后，用管理员权限打开 Windows PowerShell。先重启 IP Helper 服务，使已保存的 `portproxy` 规则重新加载：
+
+```powershell
+Restart-Service iphlpsvc
+```
+
+然后检查 9225 端口的实际监听状态：
+
+```powershell
+Get-NetTCPConnection -State Listen -LocalPort 9225 |
+  Select-Object LocalAddress, LocalPort, OwningProcess
+```
+
+正常情况下，结果中应同时包含 Edge 的本地监听地址 `127.0.0.1:9225` 和端口转发监听地址 `172.16.103.78:9225`。如果只有 `127.0.0.1:9225`，说明 `portproxy` 规则虽然可能已经保存，但尚未形成实际监听。
+
 脚本会复制当前浏览器 profile 到临时目录，然后用临时 profile 启动浏览器并开启 remote debugging。启动完成后，脚本会输出：
 
 - Windows 本地 CDP URL
