@@ -12,14 +12,38 @@ from alicesw.meta_parser import MetaParser
 
 logger = logging.getLogger(__name__)
 
+COMPLETED_CHAPTER_FIELDS = {"name", "word_count", "update_time", "id", "txt"}
+
+
+def completed_chapters_from(meta_extend) -> dict:
+    """Return completed chapters indexed by their catalogue URL."""
+    return {
+        chapter["url"]: chapter
+        for chapter in meta_extend.get("chapters", [])
+        if "url" in chapter and COMPLETED_CHAPTER_FIELDS.issubset(chapter)
+    }
+
+
+def count_remaining_chapters(meta, completed_chapters: dict) -> int:
+    """Count catalogue chapters which have not been fully downloaded."""
+    return sum(
+        chapter.get("url") not in completed_chapters
+        for chapter in meta.get("chapters", [])
+    )
+
 
 class Archiver:
     def __init__(self, url: str):
         self.url = url
         logger.info("Archiver 初始化，目标 URL=%s", url)
 
-    def run(self, timeout: int, delay: float) -> None:
-        logger.info("开始浏览器归档任务，timeout=%d, delay=%.1f", timeout, delay)
+    def run(self, timeout: int, delay: float, meta_only: bool = False) -> int | None:
+        logger.info(
+            "开始浏览器归档任务，meta_only=%s, timeout=%d, delay=%.1f",
+            meta_only,
+            timeout,
+            delay,
+        )
         downloader = Downloader(timeout=timeout)
         try:
             logger.info("下载书籍目录页: %s", self.url)
@@ -39,14 +63,26 @@ class Archiver:
             completed_chapters = {}
             if meta_extend_path.exists():
                 meta_extend = tomlkit.parse(meta_extend_path.read_text(encoding="utf-8"))
-                for completed_chapter in [chapter for chapter in meta_extend["chapters"] if "name" in chapter and "word_count" in chapter and "update_time" in chapter and "id" in chapter and "txt" in chapter]:
-                    completed_chapters[completed_chapter["url"]] = completed_chapter
+                completed_chapters = completed_chapters_from(meta_extend)
                 logger.info("已加载 meta_extend.toml，已完成 %d 个章节", len(completed_chapters))
             else:
-                logger.info("未找到已有的 meta_extend.toml，将从头开始下载")
+                logger.info("未找到已有的 meta_extend.toml")
+                if meta_only:
+                    meta_extend_path.write_text(tomlkit.dumps(meta), encoding="utf-8")
+                    logger.info("创建初始扩展元数据: %s", meta_extend_path)
 
             total_chapters = len(meta["chapters"])
-            logger.info("共 %d 个章节待下载", total_chapters)
+            remaining_chapters = count_remaining_chapters(meta, completed_chapters)
+            logger.info(
+                "章节统计：共 %d 个，已下载 %d 个，还需下载 %d 个",
+                total_chapters,
+                total_chapters - remaining_chapters,
+                remaining_chapters,
+            )
+
+            if meta_only:
+                logger.info("meta 模式完成，不下载章节")
+                return remaining_chapters
 
             downloaded_count = 0
             skipped_count = 0
@@ -88,11 +124,17 @@ class Archiver:
         finally:
             downloader.close()
 
+
 def main():
     parser = argparse.ArgumentParser(description='www.alicesw.com 电子书归档工具')
     parser.add_argument('--url', type=str, help='要归档的电子书 URL', required=True)
     parser.add_argument('--timeout', type=int, default=10, help='下载章节的超时时间（秒）')
     parser.add_argument('--delay', type=float, default=1, help='下载章节之间的延迟（秒）')
+    parser.add_argument(
+        '--meta',
+        action='store_true',
+        help='仅更新元数据并统计待下载章节，不下载章节内容',
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -101,14 +143,15 @@ def main():
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     logger.info(
-        "启动归档工具，参数: url=%s, timeout=%d, delay=%.1f",
+        "启动归档工具，参数: url=%s, meta=%s, timeout=%d, delay=%.1f",
         args.url,
+        args.meta,
         args.timeout,
         args.delay,
     )
     
     archiver = Archiver(args.url)
-    archiver.run(timeout=args.timeout, delay=args.delay)
+    archiver.run(timeout=args.timeout, delay=args.delay, meta_only=args.meta)
 
 
 if __name__ == '__main__':
